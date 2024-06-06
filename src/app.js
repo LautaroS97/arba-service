@@ -12,14 +12,7 @@ const port = process.env.PORT || 80;
 app.use(helmet());
 app.use(bodyParser.json());
 app.use(morgan('combined'));
-
-// Configurar CORS para permitir solicitudes desde tu dominio
-app.use(cors({
-    origin: 'https://proprop.com.ar', // Reemplaza con tu dominio
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
-    optionsSuccessStatus: 204
-}));
+app.use(cors());
 
 app.options('*', cors());
 
@@ -29,9 +22,10 @@ app.post('/fetch-arba-data', async (req, res) => {
     try {
         const { partida, partido } = await fetchArbaData(lat, lng);
         if (partida && partido) {
-            await sendEmail(email, partida, partido);
-            console.log('Email sent with data:', { partida, partido });
-            res.send({ message: 'Email enviado con éxito', partida: partida, partido: partido });
+            const partidoCortado = partido.split(')')[0] + ')';
+            await sendEmail(email, partida, partidoCortado);
+            console.log('Email sent with data:', { partida, partido: partidoCortado });
+            res.send({ message: 'Email enviado con éxito', partida: partida, partido: partidoCortado });
         } else {
             console.error('No se pudo obtener la partida o el partido');
             res.status(500).send({ error: 'No se pudo obtener la partida o el partido' });
@@ -159,8 +153,14 @@ async function sendEmail(email, partida, partido) {
         from: '"PROPROP" <info@proprop.com.ar>',
         to: email,
         subject: "Consulta de ARBA",
-        text: `El número de partida inmobiliaria de ARBA es: ${partida}\nLa ubicación es: ${partido}`,
-        html: `El número de partida inmobiliaria de ARBA es:<br><b>${partida}</b><hr>La ubicación es: <br><b>${partido}</b>`
+        text: `Partido/Partida: ${partido} - ${partida}\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        html: `
+            <div style="padding: 1rem; text-align: center;">
+                <img src="https://proprop.com.ar/wp-content/uploads/2023/05/Logo-PROPROP-Nuevo-2.svg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
+                <p>Partido/Partida: <b>${partido}</b> - <b>${partida}</b></p>
+                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
+            </div>
+        `
     };
 
     try {
