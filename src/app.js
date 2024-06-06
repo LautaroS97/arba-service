@@ -22,7 +22,7 @@ app.post('/fetch-arba-data', async (req, res) => {
     try {
         const { partida, partido } = await fetchArbaData(lat, lng);
         if (partida && partido) {
-            const partidoCortado = partido.split(')')[0].replace('Partido:', '').trim();
+            const partidoCortado = partido.split(')')[0].replace('Partido:', '').trim(); // Esto corta en el primer paréntesis y quita 'Partido:'
             const municipio = partido.match(/\(([^)]+)\)/)[1]; // Extraer el municipio del partido
             await sendEmail(email, partida, partidoCortado, municipio);
             console.log('Email sent with data:', { partida, partido: partidoCortado });
@@ -121,7 +121,7 @@ async function fetchArbaData(lat, lng) {
             return div ? div.textContent.trim() : 'No encontrado';
         });
 
-        console.log(`Datos del partido obtenidos: ${partido}`);
+        console.log('Datos del partido obtenidos:', partido);
 
         console.log('Cerrando el navegador...');
         await browser.close();
