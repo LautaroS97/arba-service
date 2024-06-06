@@ -22,8 +22,9 @@ app.post('/fetch-arba-data', async (req, res) => {
     try {
         const { partida, partido } = await fetchArbaData(lat, lng);
         if (partida && partido) {
-            const partidoCortado = partido.split(')')[0] + ')';
-            await sendEmail(email, partida, partidoCortado);
+            const partidoCortado = partido.split(')')[0].replace('Partido:', '').trim();
+            const municipio = partido.match(/\(([^)]+)\)/)[1]; // Extraer el municipio del partido
+            await sendEmail(email, partida, partidoCortado, municipio);
             console.log('Email sent with data:', { partida, partido: partidoCortado });
             res.send({ message: 'Email enviado con éxito', partida: partida, partido: partidoCortado });
         } else {
@@ -132,7 +133,7 @@ async function fetchArbaData(lat, lng) {
     }
 }
 
-async function sendEmail(email, partida, partido) {
+async function sendEmail(email, partida, partido, municipio) {
     let transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
         port: 465,
@@ -153,11 +154,11 @@ async function sendEmail(email, partida, partido) {
         from: '"PROPROP" <info@proprop.com.ar>',
         to: email,
         subject: "Consulta de ARBA",
-        text: `Partido/Partida: ${partido} - ${partida}\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        text: `Partido/Partida: ${partido} - ${partida} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
             <div style="padding: 1rem; text-align: center;">
-                <img src="https://proprop.com.ar/wp-content/uploads/2023/05/Logo-PROPROP-Nuevo-2.svg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Partido/Partida: <b>${partido}</b> - <b>${partida}</b></p>
+                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
+                <p>Partido/Partida: <b>${partido}</b> - <b>${partida}</b> (${municipio})</p>
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
             </div>
         `
