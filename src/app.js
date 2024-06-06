@@ -4,6 +4,7 @@ const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cors = require('cors');
 
 const app = express();
 const port = process.env.PORT || 80;
@@ -11,6 +12,16 @@ const port = process.env.PORT || 80;
 app.use(helmet());
 app.use(bodyParser.json());
 app.use(morgan('combined'));
+
+// Configurar CORS para permitir solicitudes desde tu dominio
+app.use(cors({
+    origin: 'https://proprop.com.ar', // Reemplaza con tu dominio
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+    optionsSuccessStatus: 204
+}));
+
+app.options('*', cors());
 
 app.post('/fetch-arba-data', async (req, res) => {
     console.log('Received data:', req.body);
