@@ -20,16 +20,16 @@ app.post('/fetch-arba-data', async (req, res) => {
     console.log('Received data:', req.body);
     const { lat, lng, email } = req.body;
     try {
-        const { partida, partido } = await fetchArbaData(lat, lng);
-        if (partida && partido) {
+        const { partidas, partido } = await fetchArbaData(lat, lng);
+        if (partidas && partido) {
             const partidoNumero = partido.match(/Partido:\s*(\d+)/)[1]; // Extraer el número de partido
             const municipio = partido.match(/\(([^)]+)\)/)[1]; // Extraer el municipio del partido
-            await sendEmail(email, partida, partidoNumero, municipio);
-            console.log('Email sent with data:', { partida, partido: partidoNumero, municipio });
-            res.send({ message: 'Email enviado con éxito', partida: partida, partido: partidoNumero });
+            await sendEmail(email, partidas, partidoNumero, municipio);
+            console.log('Email sent with data:', { partidas, partido: partidoNumero, municipio });
+            res.send({ message: 'Email enviado con éxito', partidas: partidas, partido: partidoNumero });
         } else {
-            console.error('No se pudo obtener la partida o el partido');
-            res.status(500).send({ error: 'No se pudo obtener la partida o el partido' });
+            console.error('No se pudo obtener las partidas o el partido');
+            res.status(500).send({ error: 'No se pudo obtener las partidas o el partido' });
         }
     } catch (error) {
         console.error('Error en el proceso:', error);
@@ -42,6 +42,7 @@ async function fetchArbaData(lat, lng) {
     try {
         console.log('Launching Puppeteer...');
         browser = await puppeteer.launch({
+            headless: true, // Cambiar a 'true' para abrir el navegador en modo headless en producción
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
         });
         const page = await browser.newPage();
@@ -49,7 +50,7 @@ async function fetchArbaData(lat, lng) {
         console.log('Navegando a la página de ARBA...');
         await page.goto('https://carto.arba.gov.ar/cartoArba/', { waitUntil: 'networkidle2' });
 
-        await page.waitForTimeout(1000);
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         console.log('Modificando manejadores de eventos...');
         await page.evaluate(() => {
@@ -61,59 +62,136 @@ async function fetchArbaData(lat, lng) {
 
         console.log('Esperando al botón de información...');
         await page.waitForSelector('.olControlInfoButtonItemInactive.olButton[title="Información"]', { visible: true });
-        await page.evaluate(() => {
-            const button = document.querySelector('.olControlInfoButtonItemInactive.olButton[title="Información"]');
-            if (button) {
-                button.style.pointerEvents = 'auto';
-                ['mousedown', 'mouseup', 'click'].forEach(event => {
-                    button.dispatchEvent(new MouseEvent(event, {
-                        bubbles: true,
-                        cancelable: true,
-                        view: window
-                    }));
-                });
+
+        let buttonActivated = false;
+        while (!buttonActivated) {
+            await page.evaluate(() => {
+                const button = document.querySelector('.olControlInfoButtonItemInactive.olButton[title="Información"]');
+                if (button) {
+                    button.style.pointerEvents = 'auto';
+                    ['mousedown', 'mouseup', 'click'].forEach(event => {
+                        button.dispatchEvent(new MouseEvent(event, {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window
+                        }));
+                    });
+                }
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar un momento para verificar el estado
+
+            buttonActivated = await page.evaluate(() => {
+                const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
+                return button !== null;
+            });
+
+            if (!buttonActivated) {
+                console.log('Botón no activado, intentando nuevamente...');
             }
-        });
+        }
 
         console.log(`Introduciendo coordenadas: ${lat}, ${lng}`);
         await page.type('#inputfindall', `${lat},${lng}`);
 
         console.log('Haciendo clic en la lista de sugerencias...');
-        await page.waitForSelector('#ui-id-1', { visible: true, timeout: 60000 });
+        await page.waitForSelector('#ui-id-1', { visible: true, timeout: 30000 });
         await page.click('#ui-id-1');
 
-        await page.waitForTimeout(5000);
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
         console.log('Haciendo clic en el centro de la pantalla...');
-        const dimensions = await page.evaluate(() => {
+        let dimensions = await page.evaluate(() => {
             return {
                 width: document.documentElement.clientWidth,
                 height: document.documentElement.clientHeight
             };
         });
 
-        const centerX = dimensions.width / 2;
-        const centerY = dimensions.height / 2;
+        let centerX = dimensions.width / 2;
+        let centerY = dimensions.height / 2;
         await page.mouse.click(centerX, centerY);
 
-        await page.waitForTimeout(10000);
+        await new Promise(resolve => setTimeout(resolve, 10000));
 
-        console.log('Esperando a que aparezca el contenedor de información...');
-        await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true });
-
-        console.log('Obteniendo datos de la partida...');
-        const partida = await page.evaluate(() => {
-            const table = document.querySelector('.panel.curva.panel-info .table.table-condensed_left');
-            if (table) {
-                const cell = table.querySelector('tbody tr td');
-                if (cell) {
-                    return cell.textContent.trim();
-                }
-            }
-            throw new Error('No se pudo encontrar el dato de partida');
+        // Asegurarse de que el botón sigue activo
+        buttonActivated = await page.evaluate(() => {
+            const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
+            return button !== null;
         });
 
-        console.log(`Número de partida obtenido: ${partida}`);
+        if (!buttonActivated) {
+            console.log('El botón se ha desactivado, intentando reactivarlo...');
+            while (!buttonActivated) {
+                await page.evaluate(() => {
+                    const button = document.querySelector('.olControlInfoButtonItemInactive.olButton[title="Información"]');
+                    if (button) {
+                        button.style.pointerEvents = 'auto';
+                        ['mousedown', 'mouseup', 'click'].forEach(event => {
+                            button.dispatchEvent(new MouseEvent(event, {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            }));
+                        });
+                    }
+                });
+
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar un momento para verificar el estado
+
+                buttonActivated = await page.evaluate(() => {
+                    const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
+                    return button !== null;
+                });
+
+                if (!buttonActivated) {
+                    console.log('Botón no activado, intentando nuevamente...');
+                } else {
+                    // Si el botón se reactiva, hacer clic en el centro de la pantalla nuevamente
+                    console.log('Haciendo clic en el centro de la pantalla nuevamente...');
+                    dimensions = await page.evaluate(() => {
+                        return {
+                            width: document.documentElement.clientWidth,
+                            height: document.documentElement.clientHeight
+                        };
+                    });
+
+                    centerX = dimensions.width / 2;
+                    centerY = dimensions.height / 2;
+                    await page.mouse.click(centerX, centerY);
+
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                }
+            }
+        }
+
+        console.log('Esperando a que aparezca el contenedor de información...');
+        await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true, timeout: 60000 });
+
+        console.log('Obteniendo todos los números de partida...');
+        const partidas = [];
+        let hasNextPage = true;
+
+        while (hasNextPage) {
+            const newPartidas = await page.evaluate(() => {
+                const rows = document.querySelectorAll('.panel.curva.panel-info .table.table-condensed_left tbody tr');
+                return Array.from(rows).map(row => row.querySelector('td').textContent.trim());
+            });
+            partidas.push(...newPartidas);
+
+            hasNextPage = await page.evaluate(() => {
+                const nextPageButton = document.querySelector('.table-pager .btn.btn-primary.btn-sm.next-page');
+                return nextPageButton && !nextPageButton.classList.contains('disabled');
+            });
+
+            if (hasNextPage) {
+                console.log('Cargando siguiente página de resultados...');
+                await page.click('.table-pager .btn.btn-primary.btn-sm.next-page');
+                await new Promise(resolve => setTimeout(resolve, 5000)); // Esperar a que se cargue la siguiente página
+            }
+        }
+
+        console.log(`Partidas obtenidas: ${partidas.join(', ')}`);
 
         console.log('Obteniendo datos del partido...');
         const partido = await page.evaluate(() => {
@@ -125,7 +203,7 @@ async function fetchArbaData(lat, lng) {
 
         console.log('Cerrando el navegador...');
         await browser.close();
-        return { partida, partido };
+        return { partidas, partido };
     } catch (error) {
         console.error('Error en Puppeteer:', error);
         if (browser) await browser.close();
@@ -133,7 +211,7 @@ async function fetchArbaData(lat, lng) {
     }
 }
 
-async function sendEmail(email, partida, partidoNumero, municipio) {
+async function sendEmail(email, partidas, partidoNumero, municipio) {
     let transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
         port: 465,
@@ -154,11 +232,11 @@ async function sendEmail(email, partida, partidoNumero, municipio) {
         from: '"PROPROP" <info@proprop.com.ar>',
         to: email,
         subject: "Consulta de ARBA",
-        text: `Partido/Partida: ${partidoNumero} - ${partida} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        text: `Partidos/Partidas: ${partidas.join(', ')} - ${partidoNumero} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Partido/Partida: <b>${partidoNumero}</b> - <b>${partida}</b> (${municipio})</p>
+                <p>Partidos/Partidas: <b>${partidas.join(', ')}</b> - <b>${partidoNumero}</b> (${municipio})</p>
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
             </div>
         `
