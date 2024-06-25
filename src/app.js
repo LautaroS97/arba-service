@@ -99,11 +99,11 @@ async function fetchArbaData(lat, lng) {
         await page.waitForTimeout(10000);
 
         console.log('Esperando a que aparezca el contenedor de información...');
-        await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true });
+        await page.waitForSelector('.panel.curva.panel-info .panel-body .table-responsive tbody', { visible: true });
 
         console.log('Obteniendo datos de las partidas...');
         const partidas = await page.evaluate(() => {
-            const rows = document.querySelectorAll('.panel.curva.panel-info .table.table-condensed_left tbody tr');
+            const rows = document.querySelectorAll('.panel.curva.panel-info .table-responsive tbody tr');
             return Array.from(rows).map(row => {
                 const cell = row.querySelector('td');
                 return cell ? cell.textContent.trim() : null;
