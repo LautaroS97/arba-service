@@ -20,13 +20,13 @@ app.post('/fetch-arba-data', async (req, res) => {
     console.log('Received data:', req.body);
     const { lat, lng, email } = req.body;
     try {
-        const { partida, partido } = await fetchArbaData(lat, lng);
-        if (partida && partido) {
-            const partidoNumero = partido.match(/Partido:\s*(\d+)/)[1]; // Extraer el número de partido
-            const municipio = partido.match(/\(([^)]+)\)/)[1]; // Extraer el municipio del partido
-            await sendEmail(email, partida, partidoNumero, municipio);
-            console.log('Email sent with data:', { partida, partido: partidoNumero, municipio });
-            res.send({ message: 'Email enviado con éxito', partida: partida, partido: partidoNumero });
+        const { partidas, partido } = await fetchArbaData(lat, lng);
+        if (partidas && partido) {
+            const partidoNumero = partido.match(/Partido:\s*(\d+)/)[1];
+            const municipio = partido.match(/\(([^)]+)\)/)[1];
+            await sendEmail(email, partidas, partidoNumero, municipio);
+            console.log('Email sent with data:', { partidas, partido: partidoNumero, municipio });
+            res.send({ message: 'Email enviado con éxito', partidas: partidas, partido: partidoNumero });
         } else {
             console.error('No se pudo obtener la partida o el partido');
             res.status(500).send({ error: 'No se pudo obtener la partida o el partido' });
@@ -101,19 +101,16 @@ async function fetchArbaData(lat, lng) {
         console.log('Esperando a que aparezca el contenedor de información...');
         await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true });
 
-        console.log('Obteniendo datos de la partida...');
-        const partida = await page.evaluate(() => {
-            const table = document.querySelector('.panel.curva.panel-info .table.table-condensed_left');
-            if (table) {
-                const cell = table.querySelector('tbody tr td');
-                if (cell) {
-                    return cell.textContent.trim();
-                }
-            }
-            throw new Error('No se pudo encontrar el dato de partida');
+        console.log('Obteniendo datos de las partidas...');
+        const partidas = await page.evaluate(() => {
+            const rows = document.querySelectorAll('.panel.curva.panel-info .table.table-condensed_left tbody tr');
+            return Array.from(rows).map(row => {
+                const cell = row.querySelector('td');
+                return cell ? cell.textContent.trim() : null;
+            }).filter(partida => partida !== null);
         });
 
-        console.log(`Número de partida obtenido: ${partida}`);
+        console.log(`Números de partida obtenidos: ${partidas.join(', ')}`);
 
         console.log('Obteniendo datos del partido...');
         const partido = await page.evaluate(() => {
@@ -125,7 +122,7 @@ async function fetchArbaData(lat, lng) {
 
         console.log('Cerrando el navegador...');
         await browser.close();
-        return { partida, partido };
+        return { partidas, partido };
     } catch (error) {
         console.error('Error en Puppeteer:', error);
         if (browser) await browser.close();
@@ -133,7 +130,7 @@ async function fetchArbaData(lat, lng) {
     }
 }
 
-async function sendEmail(email, partida, partidoNumero, municipio) {
+async function sendEmail(email, partidas, partidoNumero, municipio) {
     let transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
         port: 465,
@@ -154,11 +151,11 @@ async function sendEmail(email, partida, partidoNumero, municipio) {
         from: '"PROPROP" <info@proprop.com.ar>',
         to: email,
         subject: "Consulta de ARBA",
-        text: `Partido/Partida: ${partidoNumero} - ${partida} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        text: `Partido/Partida: ${partidoNumero} - ${partidas.join(', ')} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Partido/Partida: <b>${partidoNumero}</b> - <b>${partida}</b> (${municipio})</p>
+                <p>Partido/Partida: <b>${partidoNumero}</b> - <b>${partidas.join(', ')}</b> (${municipio})</p>
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
             </div>
         `
