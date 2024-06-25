@@ -79,7 +79,7 @@ async function fetchArbaData(lat, lng) {
         await page.type('#inputfindall', `${lat},${lng}`);
 
         console.log('Haciendo clic en la lista de sugerencias...');
-        await page.waitForSelector('#ui-id-1', { visible: true, timeout: 30000 });
+        await page.waitForSelector('#ui-id-1', { visible: true, timeout: 60000 });
         await page.click('#ui-id-1');
 
         await page.waitForTimeout(5000);
