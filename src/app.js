@@ -232,7 +232,7 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         from: '"PROPROP" <info@proprop.com.ar>',
         to: email,
         subject: "Consulta de ARBA",
-        text: `Partidos/Partidas: ${partidas.join(', ')} - ${partidoNumero} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        text: `Partidas/Partido: ${partidas.join(', ')} - ${partidoNumero} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
