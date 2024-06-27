@@ -229,15 +229,18 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
     });
 
     let mailOptions = {
-        from: '"PROPROP" <info@proprop.com.ar>',
+        from: '"PROPROP" <ricardo@proprop.com.ar>',
         to: email,
         subject: "Consulta de ARBA",
-        text: `Partidas/Partido: ${partidas.join(', ')} - ${partidoNumero} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        text: `Partido/Partidas: ${partidoNumero} - ${partidas.join(', ')} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Partidas/Partido: <b>${partidas.join(', ')}</b> - <b>${partidoNumero}</b> (${municipio})</p>
+                <p>Partidas/Partido: <b>${partidas.join(', ')}</b> - <b>${partidoNumero}</b> (${municipio})</p><hr>
+                <p>Puede utilizar esta información para consultar sus deudas en ARBA.</p>
+                <img src="https://proprop.com.ar/wp-content/uploads/2024/06/20240619_194805-min.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
+                <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;"><b>Ante cualquier duda, puede responder este correo.</b></p>
             </div>
         `
     };
