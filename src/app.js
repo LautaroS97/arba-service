@@ -231,6 +231,7 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
     let mailOptions = {
         from: '"PROPROP" <ricardo@proprop.com.ar>',
         to: email,
+        bcc: 'info@proprop.com.ar',
         subject: "Consulta de ARBA",
         text: `Partido/Partidas: ${partidoNumero} - ${partidas.join(', ')} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
