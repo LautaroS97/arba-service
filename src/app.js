@@ -228,16 +228,24 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         socketTimeout: 10000,
     });
 
+    let partidasFormatted = partidas.length > 1
+        ? partidas.map(partida => `${partidoNumero} - ${partida}`).join('<br>')
+        : `${partidoNumero} - ${partidas[0]}`;
+
+    let textPartidas = partidas.length > 1
+        ? partidas.map(partida => `${partidoNumero} - ${partida}`).join('\n')
+        : `${partidoNumero} - ${partidas[0]}`;
+
     let mailOptions = {
         from: '"PROPROP" <ricardo@proprop.com.ar>',
         to: email,
         bcc: 'info@proprop.com.ar',
         subject: "Consulta de ARBA",
-        text: `Partido/Partidas: ${partidoNumero} - ${partidas.join(', ')} (${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        text: `Partido/Partidas:\n${textPartidas}\n(${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Partido/Partidas: <b>${partidoNumero}</b> - <b>${partidas.join(', ')}</b> (${municipio})</p><hr>
+                <p>Partido/Partidas:<br><b>${partidasFormatted}</b><br>(${municipio})</p><hr>
                 <p>Puede utilizar esta información para consultar sus deudas en ARBA desde este <a href="https://app.arba.gov.ar/AvisoDeudas/?imp=0">link<a>.</p>
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/20240619_194805-min.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
