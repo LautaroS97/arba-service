@@ -22,11 +22,19 @@ app.post('/fetch-arba-data', async (req, res) => {
     try {
         const { partidas, partido } = await fetchArbaData(lat, lng);
         if (partidas && partido) {
-            const partidoNumero = partido.match(/Partido:\s*(\d+)/)[1]; // Extraer el número de partido
-            const municipio = partido.match(/\(([^)]+)\)/)[1]; // Extraer el municipio del partido
-            await sendEmail(email, partidas, partidoNumero, municipio);
-            console.log('Email sent with data:', { partidas, partido: partidoNumero, municipio });
-            res.send({ message: 'Email enviado con éxito', partidas: partidas, partido: partidoNumero });
+            const partidoNumeroMatch = partido.match(/Partido:\s*(\d+)/);
+            const municipioMatch = partido.match(/\(([^)]+)\)/);
+
+            if (partidoNumeroMatch && municipioMatch) {
+                const partidoNumero = partidoNumeroMatch[1]; // Extraer el número de partido
+                const municipio = municipioMatch[1]; // Extraer el municipio del partido
+                await sendEmail(email, partidas, partidoNumero, municipio);
+                console.log('Email sent with data:', { partidas, partido: partidoNumero, municipio });
+                res.send({ message: 'Email enviado con éxito', partidas: partidas, partido: partidoNumero });
+            } else {
+                console.error('No se pudo extraer el número de partido o el municipio.');
+                res.status(500).send({ error: 'No se pudo extraer el número de partido o el municipio.' });
+            }
         } else {
             console.error('No se pudo obtener las partidas o el partido');
             res.status(500).send({ error: 'No se pudo obtener las partidas o el partido' });
@@ -42,7 +50,7 @@ async function fetchArbaData(lat, lng) {
     try {
         console.log('Launching Puppeteer...');
         browser = await puppeteer.launch({
-            headless: 'new', // Usar la nueva implementación de headless
+            headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
         });
         const page = await browser.newPage();
@@ -61,10 +69,14 @@ async function fetchArbaData(lat, lng) {
         });
 
         console.log('Esperando al botón de información...');
-        await page.waitForSelector('.olControlInfoButtonItemInactive.olButton[title="Información"]', { visible: true });
+        let buttonActivated = await page.evaluate(() => {
+            const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
+            return button !== null;
+        });
 
-        let buttonActivated = false;
-        while (!buttonActivated) {
+        if (!buttonActivated) {
+            console.log('Botón no activado, activando...');
+
             await page.evaluate(() => {
                 const button = document.querySelector('.olControlInfoButtonItemInactive.olButton[title="Información"]');
                 if (button) {
@@ -79,7 +91,7 @@ async function fetchArbaData(lat, lng) {
                 }
             });
 
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar un momento para verificar el estado
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
             buttonActivated = await page.evaluate(() => {
                 const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
@@ -87,8 +99,12 @@ async function fetchArbaData(lat, lng) {
             });
 
             if (!buttonActivated) {
-                console.log('Botón no activado, intentando nuevamente...');
+                console.log('No se pudo activar el botón. Reintentando...');
+            } else {
+                console.log('Botón activado exitosamente.');
             }
+        } else {
+            console.log('Botón ya estaba activado.');
         }
 
         console.log(`Introduciendo coordenadas: ${lat}, ${lng}`);
@@ -114,63 +130,26 @@ async function fetchArbaData(lat, lng) {
 
         await new Promise(resolve => setTimeout(resolve, 10000));
 
-        // Asegurarse de que el botón sigue activo
-        buttonActivated = await page.evaluate(() => {
-            const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
-            return button !== null;
-        });
-
-        if (!buttonActivated) {
-            console.log('El botón se ha desactivado, intentando reactivarlo...');
-            while (!buttonActivated) {
-                await page.evaluate(() => {
-                    const button = document.querySelector('.olControlInfoButtonItemInactive.olButton[title="Información"]');
-                    if (button) {
-                        button.style.pointerEvents = 'auto';
-                        ['mousedown', 'mouseup', 'click'].forEach(event => {
-                            button.dispatchEvent(new MouseEvent(event, {
-                                bubbles: true,
-                                cancelable: true,
-                                view: window
-                            }));
-                        });
-                    }
-                });
-
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar un momento para verificar el estado
-
-                buttonActivated = await page.evaluate(() => {
-                    const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
-                    return button !== null;
-                });
-
-                if (!buttonActivated) {
-                    console.log('Botón no activado, intentando nuevamente...');
-                } else {
-                    console.log('Haciendo clic en el centro de la pantalla nuevamente...');
-                    dimensions = await page.evaluate(() => {
-                        return {
-                            width: document.documentElement.clientWidth,
-                            height: document.documentElement.clientHeight
-                        };
-                    });
-
-                    centerX = dimensions.width / 2;
-                    centerY = dimensions.height / 2;
-                    await page.mouse.click(centerX, centerY);
-
-                    await new Promise(resolve => setTimeout(resolve, 10000));
-                }
-            }
-        }
-
         console.log('Esperando a que aparezca el contenedor de información...');
         await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true, timeout: 60000 });
 
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
         console.log('Obteniendo todos los números de partida...');
         const partidas = await page.evaluate(() => {
-            const rows = document.querySelectorAll('#tableinfo3 tbody tr');
-            return Array.from(rows).map(row => row.querySelector('td').textContent.trim());
+            const table = Array.from(document.querySelectorAll('table')).find(table => {
+                return Array.from(table.querySelectorAll('th')).some(th => th.textContent.includes('Partida'));
+            });
+            
+            if (table) {
+                console.log('Tabla encontrada, extrayendo filas...');
+                const row = table.querySelector('tbody tr');
+                const partida = row ? row.querySelector('td').textContent.trim() : null;
+                return partida ? [partida] : [];
+            } else {
+                console.log('No se encontró la tabla con la columna "Partida"');
+                return [];
+            }
         });
 
         console.log(`Partidas obtenidas: ${partidas.join(', ')}`);
@@ -201,7 +180,7 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         secure: true,
         auth: {
             user: "eabu72@gmail.com",
-            pass: "9VtU5jOsXpNK6hm1"
+            pass: "9VtU5jOsXpNK6hm1",
         },
         tls: {
             rejectUnauthorized: false
@@ -229,7 +208,7 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
                 <p>Partido/Partidas:<br><b>${partidasFormatted}</b><br>(${municipio})</p><hr>
-                <p>Puede utilizar esta información para consultar sus deudas en ARBA desde este <a href="https://app.arba.gov.ar/AvisoDeudas/?imp=0">link<a>.</p>
+                <p>Puede utilizar esta información para consultar sus deudas en ARBA desde este <a href="https://app.arba.gov.ar/AvisoDeudas/?imp=0">link</a>.</p>
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/20240619_194805-min.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;"><b>Ante cualquier duda, puede responder este correo.</b></p>
