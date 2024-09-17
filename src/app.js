@@ -42,7 +42,7 @@ async function fetchArbaData(lat, lng) {
     try {
         console.log('Launching Puppeteer...');
         browser = await puppeteer.launch({
-            headless: true, // Cambiar a 'true' para abrir el navegador en modo headless en producción
+            headless: 'new', // Usar la nueva implementación de headless
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
         });
         const page = await browser.newPage();
@@ -147,7 +147,6 @@ async function fetchArbaData(lat, lng) {
                 if (!buttonActivated) {
                     console.log('Botón no activado, intentando nuevamente...');
                 } else {
-                    // Si el botón se reactiva, hacer clic en el centro de la pantalla nuevamente
                     console.log('Haciendo clic en el centro de la pantalla nuevamente...');
                     dimensions = await page.evaluate(() => {
                         return {
@@ -169,34 +168,18 @@ async function fetchArbaData(lat, lng) {
         await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true, timeout: 60000 });
 
         console.log('Obteniendo todos los números de partida...');
-        const partidas = [];
-        let hasNextPage = true;
-
-        while (hasNextPage) {
-            const newPartidas = await page.evaluate(() => {
-                const rows = document.querySelectorAll('.panel.curva.panel-info .table.table-condensed_left tbody tr');
-                return Array.from(rows).map(row => row.querySelector('td').textContent.trim());
-            });
-            partidas.push(...newPartidas);
-
-            hasNextPage = await page.evaluate(() => {
-                const nextPageButton = document.querySelector('.table-pager .btn.btn-primary.btn-sm.next-page');
-                return nextPageButton && !nextPageButton.classList.contains('disabled');
-            });
-
-            if (hasNextPage) {
-                console.log('Cargando siguiente página de resultados...');
-                await page.click('.table-pager .btn.btn-primary.btn-sm.next-page');
-                await new Promise(resolve => setTimeout(resolve, 5000)); // Esperar a que se cargue la siguiente página
-            }
-        }
+        const partidas = await page.evaluate(() => {
+            const rows = document.querySelectorAll('#tableinfo3 tbody tr');
+            return Array.from(rows).map(row => row.querySelector('td').textContent.trim());
+        });
 
         console.log(`Partidas obtenidas: ${partidas.join(', ')}`);
 
         console.log('Obteniendo datos del partido...');
         const partido = await page.evaluate(() => {
-            const div = document.querySelector('.panel.curva.panel-info .panel-body div:first-of-type');
-            return div ? div.textContent.trim() : 'No encontrado';
+            const partidoDiv = Array.from(document.querySelectorAll('.panel.curva.panel-info .panel-body div'))
+                .find(div => div.textContent.includes('Partido:'));
+            return partidoDiv ? partidoDiv.textContent.trim() : 'No encontrado';
         });
 
         console.log('Datos del partido obtenidos:', partido);
