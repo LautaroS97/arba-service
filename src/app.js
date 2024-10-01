@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const puppeteer = require('puppeteer');
@@ -179,8 +181,8 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         port: 465,
         secure: true,
         auth: {
-            user: "eabu72@gmail.com",
-            pass: "9VtU5jOsXpNK6hm1",
+            user: process.env.BREVO_USER,
+            pass: process.env.BREVO_PASS,
         },
         tls: {
             rejectUnauthorized: false
