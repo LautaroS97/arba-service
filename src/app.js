@@ -20,14 +20,18 @@ app.post('/fetch-arba-data', async (req, res) => {
     console.log('Received data:', req.body);
     const { lat, lng, email } = req.body;
     try {
+        // Llamamos a la función que usa Puppeteer
         const { partidas, partido } = await fetchArbaData(lat, lng);
         if (partidas && partido) {
+            // Extraemos número de partido y municipio del texto
             const partidoNumeroMatch = partido.match(/Partido:\s*(\d+)/);
             const municipioMatch = partido.match(/\(([^)]+)\)/);
 
             if (partidoNumeroMatch && municipioMatch) {
-                const partidoNumero = partidoNumeroMatch[1]; // Extraer el número de partido
-                const municipio = municipioMatch[1]; // Extraer el municipio del partido
+                const partidoNumero = partidoNumeroMatch[1];
+                const municipio = municipioMatch[1];
+
+                // Enviamos correo con la info
                 await sendEmail(email, partidas, partidoNumero, municipio);
                 console.log('Email sent with data:', { partidas, partido: partidoNumero, municipio });
                 res.send({ message: 'Email enviado con éxito', partidas: partidas, partido: partidoNumero });
@@ -57,8 +61,6 @@ async function fetchArbaData(lat, lng) {
 
         console.log('Navegando a la página de ARBA...');
         await page.goto('https://carto.arba.gov.ar/cartoArba/', { waitUntil: 'networkidle2' });
-
-        // Esperar un poco para que cargue la página base
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         console.log('Modificando manejadores de eventos...');
@@ -77,7 +79,6 @@ async function fetchArbaData(lat, lng) {
 
         if (!buttonActivated) {
             console.log('Botón no activado, activando...');
-
             await page.evaluate(() => {
                 const button = document.querySelector('.olControlInfoButtonItemInactive.olButton[title="Información"]');
                 if (button) {
@@ -93,7 +94,6 @@ async function fetchArbaData(lat, lng) {
             });
 
             await new Promise(resolve => setTimeout(resolve, 1000));
-
             buttonActivated = await page.evaluate(() => {
                 const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
                 return button !== null;
@@ -115,7 +115,7 @@ async function fetchArbaData(lat, lng) {
         await page.waitForSelector('#ui-id-1', { visible: true, timeout: 30000 });
         await page.click('#ui-id-1');
 
-        // Esperar para que la página procese la búsqueda y se posicione en el mapa
+        // Esperamos unos segundos para que se ubique en el mapa
         await new Promise(resolve => setTimeout(resolve, 5000));
 
         console.log('Haciendo clic en el centro de la pantalla...');
@@ -130,60 +130,39 @@ async function fetchArbaData(lat, lng) {
         let centerY = dimensions.height / 2;
         await page.mouse.click(centerX, centerY);
 
-        // Esperar para que aparezca la información en la parte inferior
+        // Esperar a que cargue la info
         await new Promise(resolve => setTimeout(resolve, 10000));
 
         console.log('Esperando a que aparezca el contenedor de información...');
         await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true, timeout: 60000 });
 
-        // Esperar un poco más para asegurar que toda la información se cargue
+        // Esperamos un poco más por las dudas
         await new Promise(resolve => setTimeout(resolve, 3000));
 
-        /**
-         * Aumentar el número de filas mostradas (por ejemplo, a 50)
-         * para capturar todas las partidas sin cambiar de página.
-         */
-        console.log('Configurando la paginación para mostrar 50 filas (si está disponible)...');
-        try {
-            await page.waitForSelector('.page-size', { visible: true, timeout: 3000 });
-            await page.click('.page-size');
-            await page.waitForSelector('.page-size-options', { visible: true, timeout: 3000 });
-            await page.evaluate(() => {
-                const option = Array.from(document.querySelectorAll('.page-size-options li a'))
-                    .find(a => a.innerText.trim() === '50');
-                if (option) {
-                    option.click();
-                }
-            });
-            // Esperar a que la tabla se recargue con la nueva cantidad de filas
-            await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (e) {
-            console.log('No se encontró la opción de paginación o no se pudo seleccionar 50. Continuando...');
-        }
-
-        /**
-         * Extraer TODAS las partidas recorriendo todas las filas de la tabla.
-         */
         console.log('Obteniendo todos los números de partida...');
         const partidas = await page.evaluate(() => {
-            // 1. Buscar la tabla que tenga en sus <th> la palabra “Partida”
+            // Buscamos la tabla donde algún <th> incluye 'Partida'
             const table = Array.from(document.querySelectorAll('table')).find(tbl =>
                 Array.from(tbl.querySelectorAll('th')).some(th => th.textContent.includes('Partida'))
             );
 
             if (!table) {
-                console.log('No se encontró la tabla con columna "Partida".');
+                console.log('No se encontró la tabla con la columna "Partida"');
                 return [];
             }
 
-            // 2. Seleccionar todas las filas del <tbody>
+            console.log('Tabla encontrada, extrayendo filas...');
+            // Obtenemos todas las filas del tbody
             const rows = table.querySelectorAll('tbody tr');
-
-            // 3. Recorrer cada fila y extraer el valor de la celda que contenga la partida
-            return Array.from(rows).map(row => {
+            const allPartidas = [];
+            
+            rows.forEach(row => {
                 const td = row.querySelector('td');
-                return td ? td.innerText.trim() : null;
-            }).filter(Boolean);
+                if (td) {
+                    allPartidas.push(td.textContent.trim());
+                }
+            });
+            return allPartidas;
         });
 
         console.log(`Partidas obtenidas: ${partidas.join(', ')}`);
@@ -224,6 +203,8 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         socketTimeout: 10000,
     });
 
+    // Formato cuando hay múltiples partidas: 
+    // Ej.: "103 - 1096" y debajo "103 - 75794", etc.
     let partidasFormatted = partidas.length > 1
         ? partidas.map(partida => `${partidoNumero} - ${partida}`).join('<br>')
         : `${partidoNumero} - ${partidas[0]}`;
@@ -263,5 +244,5 @@ const server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
 
-// Ajustar el timeout del servidor si fuera necesario
+// Ajustar timeout si fuera necesario
 server.setTimeout(10000);
