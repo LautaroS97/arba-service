@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-require('dotenv').config();
-
-=======
->>>>>>> d8fad61 (ARBA 1.04)
 const express = require('express');
 const bodyParser = require('body-parser');
 const puppeteer = require('puppeteer');
@@ -63,10 +58,7 @@ async function fetchArbaData(lat, lng) {
         console.log('Navegando a la página de ARBA...');
         await page.goto('https://carto.arba.gov.ar/cartoArba/', { waitUntil: 'networkidle2' });
 
-<<<<<<< HEAD
-=======
         // Esperar un poco para que cargue la página base
->>>>>>> d8fad61 (ARBA 1.04)
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         console.log('Modificando manejadores de eventos...');
@@ -123,10 +115,7 @@ async function fetchArbaData(lat, lng) {
         await page.waitForSelector('#ui-id-1', { visible: true, timeout: 30000 });
         await page.click('#ui-id-1');
 
-<<<<<<< HEAD
-=======
         // Esperar para que la página procese la búsqueda y se posicione en el mapa
->>>>>>> d8fad61 (ARBA 1.04)
         await new Promise(resolve => setTimeout(resolve, 5000));
 
         console.log('Haciendo clic en el centro de la pantalla...');
@@ -141,34 +130,12 @@ async function fetchArbaData(lat, lng) {
         let centerY = dimensions.height / 2;
         await page.mouse.click(centerX, centerY);
 
-<<<<<<< HEAD
-=======
         // Esperar para que aparezca la información en la parte inferior
->>>>>>> d8fad61 (ARBA 1.04)
         await new Promise(resolve => setTimeout(resolve, 10000));
 
         console.log('Esperando a que aparezca el contenedor de información...');
         await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true, timeout: 60000 });
 
-<<<<<<< HEAD
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        console.log('Obteniendo todos los números de partida...');
-        const partidas = await page.evaluate(() => {
-            const table = Array.from(document.querySelectorAll('table')).find(table => {
-                return Array.from(table.querySelectorAll('th')).some(th => th.textContent.includes('Partida'));
-            });
-            
-            if (table) {
-                console.log('Tabla encontrada, extrayendo filas...');
-                const row = table.querySelector('tbody tr');
-                const partida = row ? row.querySelector('td').textContent.trim() : null;
-                return partida ? [partida] : [];
-            } else {
-                console.log('No se encontró la tabla con la columna "Partida"');
-                return [];
-            }
-=======
         // Esperar un poco más para asegurar que toda la información se cargue
         await new Promise(resolve => setTimeout(resolve, 3000));
 
@@ -217,7 +184,6 @@ async function fetchArbaData(lat, lng) {
                 const td = row.querySelector('td');
                 return td ? td.innerText.trim() : null;
             }).filter(Boolean);
->>>>>>> d8fad61 (ARBA 1.04)
         });
 
         console.log(`Partidas obtenidas: ${partidas.join(', ')}`);
@@ -297,8 +263,5 @@ const server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
 
-<<<<<<< HEAD
-=======
 // Ajustar el timeout del servidor si fuera necesario
->>>>>>> d8fad61 (ARBA 1.04)
 server.setTimeout(10000);
