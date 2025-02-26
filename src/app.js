@@ -70,7 +70,8 @@ async function fetchArbaData(lat, lng) {
 
         console.log('Navegando a la página de ARBA...');
         await page.goto('https://carto.arba.gov.ar/cartoArba/', { waitUntil: 'networkidle2' });
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Espera simple de 1 segundo
+        await delay(1000);
 
         console.log('Modificando manejadores de eventos...');
         await page.evaluate(() => {
@@ -102,7 +103,7 @@ async function fetchArbaData(lat, lng) {
                 }
             });
 
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await delay(1000); // Espera un poco
             buttonActivated = await page.evaluate(() => {
                 const button = document.querySelector('.olControlInfoButtonItemActive.olButton[title="Información"]');
                 return button !== null;
@@ -125,7 +126,7 @@ async function fetchArbaData(lat, lng) {
         await page.click('#ui-id-1');
 
         // Esperamos unos segundos para que se ubique en el mapa
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await delay(5000);
 
         console.log('Haciendo clic en el centro de la pantalla...');
         let dimensions = await page.evaluate(() => {
@@ -140,13 +141,13 @@ async function fetchArbaData(lat, lng) {
         await page.mouse.click(centerX, centerY);
 
         // Esperar a que cargue la info
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        await delay(10000);
 
         console.log('Esperando a que aparezca el contenedor de información...');
         await page.waitForSelector('.panel.curva.panel-info .panel-body div', { visible: true, timeout: 60000 });
 
         // Esperamos un poco más por las dudas
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await delay(3000);
 
         // Aquí obtenemos todas las partidas (iterando cada página si hubiera)
         console.log('Obteniendo todas las partidas de la tabla...');
@@ -174,27 +175,23 @@ async function fetchArbaData(lat, lng) {
 }
 
 /**
- * Extrae todas las partidas de la tabla, iterando las páginas si las hay.
+ * Itera por las páginas (si las hubiera) y retorna un array con todas las filas extraídas.
  */
 async function getAllPartidas(page) {
-    // Esperamos a que aparezca el paginador (o que no exista si sólo hay 1 página).
-    // Si la tabla no maneja paginación, 'table-pager' podría no existir.
-    // Por seguridad, hacemos un try/catch:
+    // Si la tabla no usa paginación, o solo hay 1 página, .table-pager podría no existir
     try {
         await page.waitForSelector('.table-pager', { visible: true, timeout: 4000 });
     } catch (err) {
-        // Si no aparece .table-pager, significa que sólo hay 1 página (o no hay paginador).
         console.log('No se encontró paginador (.table-pager). Asumimos 1 sola página.');
     }
 
-    // Revisamos cuántas páginas hay en total:
+    // Obtener el total de páginas (si existe el elemento .total-pages)
     const totalPages = await page.evaluate(() => {
         const totalPagesEl = document.querySelector('.table-pager .total-pages');
         if (totalPagesEl) {
             return parseInt(totalPagesEl.textContent.trim(), 10);
         }
-        // Si no existe total-pages, asumimos 1
-        return 1;
+        return 1; // si no existe, 1 sola página
     });
 
     let allPartidas = [];
@@ -203,7 +200,7 @@ async function getAllPartidas(page) {
         const filas = await extractTableRows(page);
         allPartidas = allPartidas.concat(filas);
 
-        // Si no es la última página, clic en Next:
+        // Si no es la última página, clic en Next
         if (currentPage < totalPages) {
             console.log('Haciendo clic en botón "next-page"...');
             await page.evaluate(() => {
@@ -213,16 +210,15 @@ async function getAllPartidas(page) {
                 }
             });
 
-            // Esperamos a que la tabla se recargue
-            await page.waitForTimeout(2000);
+            // En entornos donde page.waitForTimeout no funciona, usamos un delay manual
+            await delay(2000); 
         }
     }
-
     return allPartidas;
 }
 
 /**
- * Extrae (partida, sp, supTerreno) de la tabla (página actual).
+ * Extrae (partida, sp, supTerreno) de la tabla en la página actual.
  */
 async function extractTableRows(page) {
     return page.evaluate(() => {
@@ -245,6 +241,9 @@ async function extractTableRows(page) {
     });
 }
 
+/**
+ * Envío de email con toda la información recolectada.
+ */
 async function sendEmail(email, partidas, partidoNumero, municipio) {
     let transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
@@ -262,11 +261,9 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         socketTimeout: 10000,
     });
 
-    // Armamos texto y HTML con Subparcela (PH) en caso de que 'sp' sea distinto de vacío
-    // Ejemplo: "103 - 75798 : Subparcela (PH) 6"
+    // Armamos el texto (HTML y texto plano) con el formato "103 - 75798 : Subparcela (PH) 6"
     const partidasFormattedHTML = partidas
       .map(obj => {
-        // Si sp está vacío, sólo mostramos "103 - 75798"
         return obj.sp
           ? `${partidoNumero} - ${obj.partida} : Subparcela (PH) ${obj.sp}`
           : `${partidoNumero} - ${obj.partida}`;
@@ -306,6 +303,11 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         console.error('Error enviando email:', error);
         throw error;
     }
+}
+
+// Simple helper para "esperar X ms" sin usar page.waitForTimeout
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 const server = app.listen(port, () => {
