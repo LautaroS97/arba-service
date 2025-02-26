@@ -22,6 +22,7 @@ app.post('/fetch-arba-data', async (req, res) => {
     try {
         // Llamamos a la función que usa Puppeteer
         const { partidas, partido } = await fetchArbaData(lat, lng);
+
         if (partidas && partido) {
             // Extraemos número de partido y municipio del texto
             const partidoNumeroMatch = partido.match(/Partido:\s*(\d+)/);
@@ -33,8 +34,16 @@ app.post('/fetch-arba-data', async (req, res) => {
 
                 // Enviamos correo con la info
                 await sendEmail(email, partidas, partidoNumero, municipio);
-                console.log('Email sent with data:', { partidas, partido: partidoNumero, municipio });
-                res.send({ message: 'Email enviado con éxito', partidas: partidas, partido: partidoNumero });
+                console.log('Email sent with data:', { 
+                    partidas: partidas.map(p => `${p.partida} (SP: ${p.sp})`),
+                    partido: partidoNumero,
+                    municipio
+                });
+                res.send({ 
+                    message: 'Email enviado con éxito', 
+                    partidas: partidas.map(p => p.partida), 
+                    partido: partidoNumero 
+                });
             } else {
                 console.error('No se pudo extraer el número de partido o el municipio.');
                 res.status(500).send({ error: 'No se pudo extraer el número de partido o el municipio.' });
@@ -54,7 +63,7 @@ async function fetchArbaData(lat, lng) {
     try {
         console.log('Launching Puppeteer...');
         browser = await puppeteer.launch({
-            headless: true,
+            headless: "new",
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
         });
         const page = await browser.newPage();
@@ -139,33 +148,11 @@ async function fetchArbaData(lat, lng) {
         // Esperamos un poco más por las dudas
         await new Promise(resolve => setTimeout(resolve, 3000));
 
-        console.log('Obteniendo todos los números de partida...');
-        const partidas = await page.evaluate(() => {
-            // Buscamos la tabla donde algún <th> incluye 'Partida'
-            const table = Array.from(document.querySelectorAll('table')).find(tbl =>
-                Array.from(tbl.querySelectorAll('th')).some(th => th.textContent.includes('Partida'))
-            );
+        // Aquí obtenemos todas las partidas (iterando cada página si hubiera)
+        console.log('Obteniendo todas las partidas de la tabla...');
+        const partidas = await getAllPartidas(page);
 
-            if (!table) {
-                console.log('No se encontró la tabla con la columna "Partida"');
-                return [];
-            }
-
-            console.log('Tabla encontrada, extrayendo filas...');
-            // Obtenemos todas las filas del tbody
-            const rows = table.querySelectorAll('tbody tr');
-            const allPartidas = [];
-            
-            rows.forEach(row => {
-                const td = row.querySelector('td');
-                if (td) {
-                    allPartidas.push(td.textContent.trim());
-                }
-            });
-            return allPartidas;
-        });
-
-        console.log(`Partidas obtenidas: ${partidas.join(', ')}`);
+        console.log('Partidas obtenidas:', partidas.map(p => `${p.partida}(SP:${p.sp})`).join(', '));
 
         console.log('Obteniendo datos del partido...');
         const partido = await page.evaluate(() => {
@@ -186,6 +173,78 @@ async function fetchArbaData(lat, lng) {
     }
 }
 
+/**
+ * Extrae todas las partidas de la tabla, iterando las páginas si las hay.
+ */
+async function getAllPartidas(page) {
+    // Esperamos a que aparezca el paginador (o que no exista si sólo hay 1 página).
+    // Si la tabla no maneja paginación, 'table-pager' podría no existir.
+    // Por seguridad, hacemos un try/catch:
+    try {
+        await page.waitForSelector('.table-pager', { visible: true, timeout: 4000 });
+    } catch (err) {
+        // Si no aparece .table-pager, significa que sólo hay 1 página (o no hay paginador).
+        console.log('No se encontró paginador (.table-pager). Asumimos 1 sola página.');
+    }
+
+    // Revisamos cuántas páginas hay en total:
+    const totalPages = await page.evaluate(() => {
+        const totalPagesEl = document.querySelector('.table-pager .total-pages');
+        if (totalPagesEl) {
+            return parseInt(totalPagesEl.textContent.trim(), 10);
+        }
+        // Si no existe total-pages, asumimos 1
+        return 1;
+    });
+
+    let allPartidas = [];
+    for (let currentPage = 1; currentPage <= totalPages; currentPage++) {
+        console.log(`Extrayendo filas de la página ${currentPage} de ${totalPages}...`);
+        const filas = await extractTableRows(page);
+        allPartidas = allPartidas.concat(filas);
+
+        // Si no es la última página, clic en Next:
+        if (currentPage < totalPages) {
+            console.log('Haciendo clic en botón "next-page"...');
+            await page.evaluate(() => {
+                const nextBtn = document.querySelector('.btn.btn-primary.btn-sm.next-page');
+                if (nextBtn && !nextBtn.classList.contains('disabled')) {
+                    nextBtn.click();
+                }
+            });
+
+            // Esperamos a que la tabla se recargue
+            await page.waitForTimeout(2000);
+        }
+    }
+
+    return allPartidas;
+}
+
+/**
+ * Extrae (partida, sp, supTerreno) de la tabla (página actual).
+ */
+async function extractTableRows(page) {
+    return page.evaluate(() => {
+        const table = Array.from(document.querySelectorAll('table')).find(tbl =>
+            Array.from(tbl.querySelectorAll('th')).some(th => th.textContent.includes('Partida'))
+        );
+        if (!table) {
+            console.log('No se encontró la tabla con la columna "Partida".');
+            return [];
+        }
+        const rows = table.querySelectorAll('tbody tr');
+        return Array.from(rows).map(row => {
+            const tds = row.querySelectorAll('td');
+            return {
+                partida: tds[0] ? tds[0].textContent.trim() : '',
+                supTerreno: tds[1] ? tds[1].textContent.trim() : '',
+                sp: tds[2] ? tds[2].textContent.trim() : ''
+            };
+        });
+    });
+}
+
 async function sendEmail(email, partidas, partidoNumero, municipio) {
     let transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
@@ -203,26 +262,35 @@ async function sendEmail(email, partidas, partidoNumero, municipio) {
         socketTimeout: 10000,
     });
 
-    // Formato cuando hay múltiples partidas: 
-    // Ej.: "103 - 1096" y debajo "103 - 75794", etc.
-    let partidasFormatted = partidas.length > 1
-        ? partidas.map(partida => `${partidoNumero} - ${partida}`).join('<br>')
-        : `${partidoNumero} - ${partidas[0]}`;
+    // Armamos texto y HTML con Subparcela (PH) en caso de que 'sp' sea distinto de vacío
+    // Ejemplo: "103 - 75798 : Subparcela (PH) 6"
+    const partidasFormattedHTML = partidas
+      .map(obj => {
+        // Si sp está vacío, sólo mostramos "103 - 75798"
+        return obj.sp
+          ? `${partidoNumero} - ${obj.partida} : Subparcela (PH) ${obj.sp}`
+          : `${partidoNumero} - ${obj.partida}`;
+      })
+      .join('<br>');
 
-    let textPartidas = partidas.length > 1
-        ? partidas.map(partida => `${partidoNumero} - ${partida}`).join('\n')
-        : `${partidoNumero} - ${partidas[0]}`;
+    const partidasFormattedText = partidas
+      .map(obj => {
+        return obj.sp
+          ? `${partidoNumero} - ${obj.partida} : Subparcela (PH) ${obj.sp}`
+          : `${partidoNumero} - ${obj.partida}`;
+      })
+      .join('\n');
 
     let mailOptions = {
         from: '"PROPROP" <ricardo@proprop.com.ar>',
         to: email,
         bcc: 'info@proprop.com.ar',
         subject: "Consulta de ARBA",
-        text: `Partido/Partidas:\n${textPartidas}\n(${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
+        text: `Partido/Partidas:\n${partidasFormattedText}\n(${municipio})\n\nTe llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.`,
         html: `
             <div style="padding: 1rem; text-align: center;">
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/Logo-email.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
-                <p>Partido/Partidas:<br><b>${partidasFormatted}</b><br>(${municipio})</p><hr>
+                <p>Partido/Partidas:<br><b>${partidasFormattedHTML}</b><br>(${municipio})</p><hr>
                 <p>Puede utilizar esta información para consultar sus deudas en ARBA desde este <a href="https://app.arba.gov.ar/AvisoDeudas/?imp=0">link</a>.</p>
                 <img src="https://proprop.com.ar/wp-content/uploads/2024/06/20240619_194805-min.jpg" style="width: 100%; padding: 1rem;" alt="Logo PROPROP">
                 <p style="margin-top: 1rem; font-size: 0.8rem; font-style: italic;">Te llegó este correo porque solicitaste tu número de partida inmobiliaria al servicio de consultas de ProProp.</p>
